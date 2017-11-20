@@ -1,0 +1,46 @@
+{% extends 'layouts/main.html' %}
+{% block title %}plot{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <h1>{{ apogee_id }}</h1>
+</div>
+
+<p class="lead">
+    <a href="https://dr14.sdss.org/infrared/spectrum/view/stars?apogee_id={{ star.apogee_id }}&location_id={{ star.location_id }}&commiss={{ star.commiss }}">
+        Link to SDSS DR14 spectrum page
+    </a>
+</p>
+
+<p>
+    <ul>
+        <li>[Fe/H] = {{ '{0:0.3f}'.format(star.fe_h) }}</li>
+        <li>log<i>g</i> = {{ '{0:0.2f}'.format(star.logg) }}</li>
+        <li>Teff = {{ '{0:0.0f}'.format(star.teff) }}K</li>
+    </ul>
+</p>
+
+<div id="dashboard"></div>
+
+<script type="text/javascript">
+    var graph = {{graph | safe}};
+    Plotly.plot("dashboard", graph.data, graph.layout);
+
+    // var plotRVData = document.getElementById('RVData')
+    // plot.on('plotly_hover', function(data){
+    //     var infotext = data.points.map(function(d){
+    //         if (d.curveNumber == 1) {
+    //             console.log(d.data.customdata);
+    //         }
+    //     });
+    // })
+</script>
+
+{% endblock %}
+
+{% block scripts %}
+    <!-- D3.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.6/d3.min.js"></script>
+    <!-- Plotly.js -->
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+{% endblock %}
