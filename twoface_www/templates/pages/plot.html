@@ -1,5 +1,18 @@
 {% extends 'layouts/main.html' %}
 {% block title %}plot{% endblock %}
+
+{% block scripts %}
+    <link
+        href="http://cdn.pydata.org/bokeh/release/bokeh-0.12.5.min.css"
+        rel="stylesheet" type="text/css">
+    <link
+        href="http://cdn.pydata.org/bokeh/release/bokeh-widgets-0.12.5.min.css"
+        rel="stylesheet" type="text/css">
+
+    <script src="http://cdn.pydata.org/bokeh/release/bokeh-0.12.10.min.js"></script>
+    <script src="http://cdn.pydata.org/bokeh/release/bokeh-widgets-0.12.10.min.js"></script>
+{% endblock %}
+
 {% block content %}
 
 <div class="page-header">
@@ -20,27 +33,7 @@
     </ul>
 </p>
 
-<div id="dashboard"></div>
+{{ bokeh_script|safe }}
+{{ bokeh_div|safe }}
 
-<script type="text/javascript">
-    var graph = {{graph | safe}};
-    Plotly.plot("dashboard", graph.data, graph.layout);
-
-    // var plotRVData = document.getElementById('RVData')
-    // plot.on('plotly_hover', function(data){
-    //     var infotext = data.points.map(function(d){
-    //         if (d.curveNumber == 1) {
-    //             console.log(d.data.customdata);
-    //         }
-    //     });
-    // })
-</script>
-
-{% endblock %}
-
-{% block scripts %}
-    <!-- D3.js -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.6/d3.min.js"></script>
-    <!-- Plotly.js -->
-    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 {% endblock %}

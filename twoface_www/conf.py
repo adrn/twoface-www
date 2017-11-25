@@ -1,7 +1,6 @@
 # coding: utf-8
 
 # Standard-library
-import json
 from os import path
 
 # Flask
@@ -10,10 +9,14 @@ from flask import Flask, render_template, g
 # Third-party
 import astropy.units as u
 import numpy as np
-import plotly
-import plotly.graph_objs as go
 from thejoker.sampler import JokerSamples
 from twobody.celestial import RVOrbit, VelocityTrend1
+
+from bokeh import events
+from bokeh.plotting import figure, gridplot
+from bokeh.models import ColumnDataSource, Whisker, TapTool, ResetTool
+from bokeh.models.callbacks import CustomJS
+from bokeh.embed import components
 
 from twoface.config import TWOFACE_CACHE_PATH
 from twoface.db import db_connect
@@ -70,18 +73,23 @@ def plot(apogee_id):
                            apogee_id)
     samples = JokerSamples(trend_cls=VelocityTrend1, **samples)
 
-    # Create the Plotly Data Structure
-
-    graph_data = []
-
+    # helpers:
     w = np.ptp(data.t.mjd)
     t_grid = np.linspace(data.t.mjd.min() - w*0.05,
                          data.t.mjd.max() + w*1.05,
                          1024)
 
-    # plot orbits over the data
-    # TODO: how many to plot?
+    # Create the Bokeh plot of the data and orbit curves
+    TOOLS = "pan,hover,box_zoom,reset"
+    data_plot = figure(x_axis_label='MJD', y_axis_label='RV [km/s]',
+                       plot_width=700, plot_height=500,
+                       x_range=[t_grid.min(), t_grid.max()],
+                       tools=TOOLS)
+
+    # Now plot orbits over the data:
+    # TODO: control how many to plot?
     n_plot = 128
+    all_data = []
     for i in range(n_plot):
         this_samples = dict()
         for k in samples.keys():
@@ -96,67 +104,72 @@ def plot(apogee_id):
 
         orbit = RVOrbit(trend=trend, **this_samples)
         orbit_rv = orbit.generate_rv_curve(t_grid).to(u.km/u.s).value
+        all_data.append(list(orbit_rv))
 
-        graph_data.append(
-            go.Scatter(x=t_grid, y=orbit_rv,
-                       mode='lines', customdata=i,
-                       xaxis='x', yaxis='y',
-                       line=dict(color='#555555', width=1),
-                       opacity=0.25
-                       )
-        )
+        data_plot.line(t_grid, orbit_rv, color='#aaaaaa',
+                       line_alpha=0.25, line_width=1, name=str(i))
 
-    graph_data.append(
-        go.Scatter(x=data.t.mjd,
-                   y=data.rv.to(u.km/u.s).value,
-                   mode='markers',
-                   error_y=dict(type='data',
-                                array=data.stddev.to(u.km/u.s).value,
-                                visible=True),
-                   marker=dict(color='#222222'),
-                   xaxis='x', yaxis='y')
+    # For any highlighted / selected points:
+    highlighted = ColumnDataSource(data=dict(t=[], rv=[]))
+    data_plot.line('t', 'rv', source=highlighted, alpha=1., color='#333333',
+                   line_width=2)
+
+    # For errorbars:
+    upper = (data.rv + data.stddev).to(u.km/u.s).value
+    lower = (data.rv - data.stddev).to(u.km/u.s).value
+    source_error = ColumnDataSource(data=dict(base=data.t.mjd,
+                                              lower=lower, upper=upper))
+
+    data_plot.scatter(data.t.mjd, data.rv.to(u.km/u.s).value, color='#222222')
+    data_plot.add_layout(
+        Whisker(source=source_error, base="base", upper="upper", lower="lower",
+                lower_head=None, upper_head=None)
     )
 
-    graph_data.append(go.Scatter(
-        x=samples['P'].to(u.day).value,
-        y=samples['ecc'].value,
-        mode='markers',
-        xaxis='x2', yaxis='y2'))
+    # Plot the samples:
+    samples_plot = figure(x_axis_label='period [day]',
+                          y_axis_label='eccentricity',
+                          x_axis_type="log", x_range=[8, 32768], y_range=[0, 1],
+                          plot_width=500, plot_height=500,
+                          tools=TOOLS)
+    samples_plot.scatter(samples['P'].to(u.day).value,
+                         samples['ecc'].value,
+                         color='#222222', line_alpha=0.25, line_width=0)
 
-    layout = dict(
-        title='',
-        height=512,
-        xaxis=dict(
-            anchor='y',
-            title='time [MJD]',
-            domain=[0, 0.6]
-        ),
-        yaxis=dict(
-            anchor='x',
-            title='radial velocity [km/s]'
-        ),
-        xaxis2=dict(
-            anchor='y2',
-            type='log',
-            autorange=True,
-            title='period [day]',
-            domain=[0.7, 1.]
-        ),
-        yaxis2=dict(
-            anchor='x2',
-            title='eccentricity'
-        ),
-        showlegend=False
-    )
+    # plot = data_plot
+    plot = gridplot([[data_plot, samples_plot]])
 
-    graph = dict(data=graph_data, layout=layout)
+    line_data = ColumnDataSource(data=dict(
+        t_grid=list(t_grid),
+        rv=list(all_data)))
+    callback = CustomJS(args=dict(source=highlighted, line_data=line_data),
+                        code="""
+            var idx = cb_data.source.selected['1d'].indices[0];
+            var d = source.data;
 
-    # Convert the figures to JSON
-    graph_json = json.dumps(graph, cls=plotly.utils.PlotlyJSONEncoder)
+            if (idx !== undefined && idx !== null) {
+                d['t'] = line_data.data['t_grid'];
+                d['rv'] = line_data.data['rv'][idx];
+                source.change.emit();
+            }
+        """)
+    samples_plot.add_tools(TapTool(callback=callback))
 
-    return render_template('pages/plot.html', apogee_id=apogee_id,
-                           star=star,
-                           graph=graph_json)
+    reset_callback = CustomJS(args=dict(), code="""
+            var d = source.data;
+            if (idx !== undefined && idx !== null) {
+                d['t'] = [];
+                d['rv'] = [];
+                source.change.emit();
+            }
+    """)
+    samples_plot.js_on_event(events.Reset, reset_callback)
+    # samples_plot.add_tools(ResetTool(callback=reset_callback))
+
+    script, div = components(plot)
+
+    return render_template('pages/plot.html', apogee_id=apogee_id, star=star,
+                           bokeh_script=script, bokeh_div=div)
 
 # ------------------------------------------------------------------------------
 # Error handlers.
