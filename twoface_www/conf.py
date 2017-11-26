@@ -14,7 +14,7 @@ from twobody.celestial import RVOrbit, VelocityTrend1
 
 from bokeh import events
 from bokeh.plotting import figure, gridplot
-from bokeh.models import ColumnDataSource, Whisker, TapTool, ResetTool
+from bokeh.models import ColumnDataSource, Whisker, TapTool, ResetTool, Circle
 from bokeh.models.callbacks import CustomJS
 from bokeh.embed import components
 
@@ -80,7 +80,7 @@ def plot(apogee_id):
                          1024)
 
     # Create the Bokeh plot of the data and orbit curves
-    TOOLS = "pan,hover,box_zoom,reset"
+    TOOLS = "pan,box_zoom,reset"
     data_plot = figure(x_axis_label='MJD', y_axis_label='RV [km/s]',
                        plot_width=700, plot_height=500,
                        x_range=[t_grid.min(), t_grid.max()],
@@ -132,9 +132,15 @@ def plot(apogee_id):
                           x_axis_type="log", x_range=[8, 32768], y_range=[0, 1],
                           plot_width=500, plot_height=500,
                           tools=TOOLS)
-    samples_plot.scatter(samples['P'].to(u.day).value,
-                         samples['ecc'].value,
-                         color='#222222', line_alpha=0.25, line_width=0)
+    renderer = samples_plot.scatter(samples['P'].to(u.day).value,
+                                    samples['ecc'].value,
+                                    color='#222222', fill_alpha=0.5,
+                                    line_alpha=0, line_width=5, size=10)
+
+    renderer.nonselection_glyph = Circle(fill_alpha=0.05, fill_color="#222222",
+                                         line_color=None)
+    renderer.selection_glyph = Circle(fill_alpha=0.75, fill_color="#222222",
+                                      line_color=None)
 
     # plot = data_plot
     plot = gridplot([[data_plot, samples_plot]])
@@ -155,13 +161,11 @@ def plot(apogee_id):
         """)
     samples_plot.add_tools(TapTool(callback=callback))
 
-    reset_callback = CustomJS(args=dict(), code="""
+    reset_callback = CustomJS(args=dict(source=highlighted), code="""
             var d = source.data;
-            if (idx !== undefined && idx !== null) {
-                d['t'] = [];
-                d['rv'] = [];
-                source.change.emit();
-            }
+            d['t'] = [];
+            d['rv'] = [];
+            source.change.emit();
     """)
     samples_plot.js_on_event(events.Reset, reset_callback)
     # samples_plot.add_tools(ResetTool(callback=reset_callback))
